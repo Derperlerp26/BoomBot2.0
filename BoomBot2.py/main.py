@@ -11,14 +11,18 @@ import pickle
 import threading
 
 # Load bot settings
-if not os.path.isfile('botSettings.json'):
-    sys.exit("The botSettings.json file is missing. Get your shit together.")
-else:
-    with open('botSettings.json') as botSettings:
-        jSettings = json.load(botSettings)
+try:
+    if not os.path.isfile('botSettings.json'):
+        jSettings = {"prefix" : "??", "currActivity" : "", "version" : "", "description" : ""}
+        json.dump(jSettings, open('botSettings.json', 'w'), indent = 4)
+    else:
+        with open('botSettings.json') as botSettings:
+            jSettings = json.load(botSettings)
+        botSettings.close()
     settings = namedtuple("Settings", jSettings.keys())(*jSettings.values())
-    botSettings.close()
     print("Settings successfully loaded.")
+except:
+    print("Error when loading settings.")
 
 
 # Bot and client

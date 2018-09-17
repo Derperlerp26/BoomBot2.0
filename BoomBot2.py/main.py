@@ -13,12 +13,15 @@ import threading
 # Load bot settings
 try:
     if not os.path.isfile('botSettings.json'):
+        # Creates file with default settings
         jSettings = {"prefix" : "??", "currActivity" : "", "version" : "", "description" : ""}
         json.dump(jSettings, open('botSettings.json', 'w'), indent = 4)
     else:
         with open('botSettings.json') as botSettings:
             jSettings = json.load(botSettings)
         botSettings.close()
+    # Loads settings file as an object with variables rather than a dict
+    # Might change settings back to a dict for efficiency purposes
     settings = namedtuple("Settings", jSettings.keys())(*jSettings.values())
     print("Settings successfully loaded.")
 except:
@@ -34,7 +37,9 @@ try:
     hackerman = open('Hackerman.txt', 'r')
 except:
     print("Ah ah ah! You didn\'t say the magic word!")
+# Might try to see if this can be done as hackerman.read()
 magicWord = str(hackerman.readlines()).translate(dict.fromkeys(map(ord, '[\']'), None))
+# Unsure if string shortening is necessary for non windows systems
 if sys.platform != "win32":
     magicWord = magicWord[:(len(magicWord) - 2)]
 
@@ -46,15 +51,19 @@ handler.setFormatter(logging.Formatter('%(asctime)s :: %(levelname)s ::\t%(name)
 logger.addHandler(handler)
 
 
+# Bot memory and knowledge
 class ObjStore(object):
     def __init__(self):
         self.tBanList = []
         self.tRoleList = []
         self.pRoleList = []
+    # loads file to a variable (named by loadTo) to ObjStore class from loadFrom using pickle
     def loadFile(self, loadFrom, loadTo):
         try:
+            # Creates empty file if loadFrom is not in the directory
             if not os.path.isfile(loadFrom):
                 lFile = open(loadFrom, 'w').write('')
+            # Loads file only if it is not empty
             elif os.path.getsize(loadFrom) > 0:
                 with open(loadFrom, 'rb') as lFile:
                     setattr(self, loadTo, pickle.load(lFile))
@@ -65,9 +74,10 @@ class ObjStore(object):
             print("Error when loading from {}.".format(loadFrom))
             print(exce)
 
+# Might make a folder for each guild
 class TempBan(object):
-    def __init__(self, user, duration, reason, guildID, startTime = round(time.time())):
-        self.user = user
+    def __init__(self, userID, duration, reason, guildID, startTime = round(time.time())):
+        self.userID = userID
         self.duration = duration
         self.reason = reason
         self.startTime = startTime
@@ -84,23 +94,29 @@ class TempRole(object):
 class PersistRole(object):
     def __init__(self, userID, roleID, guildID):
         self.userID = userID
-        self.duration = duration
         self.roleID = roleID
         self.guildID = guildID
 
+# Constantly checks lists every 60 seconds
+# Might make a setting for how often it checks the time
 async def checkTime():
     """Checks all temp stuff and persist stuff."""
     while True:
+        # Unbans if the duration has passed
         for tBan in objStore.tBanList:
             if (round(time.time()) - tBan.startTime) > (tBan.duration * 86400):
                 await client.get_guild(tBan.guildID).unban(tBan.userID)
+                objStore.tBanList.remove(tBan)
+        # Removes role if duration has elapsed
         for tRole in objStore.tRoleList:
             if (round(time.time()) - tRole.startTime) > (tRole.duration * 86400):
                 await client.get_guild(tRole.guildID).get_member(tRole.userID).remove_roles(tBan.roleID)
-            #elif client.get_role(tRole.roleID) not in client.get_guild(tRole.guildID).get_member(tRole.userID).roles:
-                #await client.get_guild(tRole.guildID).get_member(tRole.userID).add_roles(roleID)
+                objStore.tRoleList.remove(tRole)
+            elif client.get_role(tRole.roleID) not in client.get_guild(tRole.guildID).get_member(tRole.userID).roles:
+                await client.get_guild(tRole.guildID).get_member(tRole.userID).add_roles(roleID)
+        # Gives user a role if they lack it
         for pRole in objStore.pRoleList:
-            if client.get_role(pRole.roleID) not in client.get_guild(pRole.guildID).get_member(pRole.userID).roles:
+            if client.get_user(pRole.userID) in client.get_guild(pRole.guildID).members and client.get_role(pRole.roleID) not in client.get_guild(pRole.guildID).get_member(pRole.userID).roles:
                 await client.get_guild(pRole.guildID).get_member(pRole.userID).add_roles(roleID)
         print("Time checked.")
         time.sleep(60)
@@ -125,11 +141,17 @@ async def on_ready():
     await bot.change_presence(activity = discord.Game(name = settings.currActivity))
     print("Playing: {}\n\n".format(settings.currActivity))
     objStore.loadFile('tempBans.txt', 'tBanList')
+    objStore.loadFile('tempRoles.txt', 'tRoleList')
+    objStore.loadFile('persistRoles.txt', 'pRoleList')
     #timeChecker.start()
 
 #@bot.event
 #async def on_member_update():
 
+
+@bot.command()
+async def on_command(ctx):
+    print(ctx.message.content)
 
 @bot.command()
 async def listEmojis(ctx):
@@ -240,6 +262,17 @@ async def tempRole(ctx, user : discord.Member, duration, role : discord.Role):
     else:
         embed.description = "You do not have permission to use this command, {}. Begone, ***thot***.".format(user.mention)
     await ctx.send(embed = embed)
+
+@bot.command()
+async def persistRole(ctx, user : discord.Member, role : discord.Role):
+    """Grants a role that lasts, even if the user leaves."""
+    embed = discord.Embed(title = "Command : persistRole", color = 0xff0000)
+    if ctx.message.author.guild_permissions.manage_roles:
+        try:
+            for pRole in objStore.pRoleList:
+                if pRole.userID == user.id and user.has_role(client.get_role(role.id)):
+                    # Remove role from user and from pRoleList
+
 
 # Start up the bot
 bot.run(magicWord)
